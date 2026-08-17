@@ -161,11 +161,17 @@
   <nav id="nav"></nav>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 /* =====================================================================
-   CONTA — dados reais, salvos apenas neste aparelho (localStorage).
-   Sem servidor: nada é enviado para fora. A senha tranca o app aqui.
+   CONTA — dados reais, salvos na nuvem (Supabase). Login de verdade,
+   sincroniza entre aparelhos. Cada pessoa só enxerga os próprios dados
+   (Row Level Security no banco).
    ===================================================================== */
+
+const SUPABASE_URL = "https://nyklnencrprtcnrvkwwt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55a2xuZW5jcnBydGNucnZrd3d0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5ODk1MTcsImV4cCI6MjEwMjU2NTUxN30.ph9TfCFvDUyq4qevFj8XScMXnmsp0N7ft-9fD79dKE8";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PALETA = ["#4ADE80","#FB923C","#60A5FA","#C084FC","#FACC15","#22D3EE","#F472B6","#818CF8","#FDBA74","#A3E635","#F87171","#94A3B8"];
 const BANCOS = ["Nubank","Itaú","Bradesco","Banco do Brasil","Caixa","Santander","Inter","C6 Bank","Sicredi","Sicoob","PicPay","Outro"];
@@ -186,18 +192,62 @@ const MABR=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","d
 const AGORA=new Date(), HOJE=AGORA.getDate(), MES=AGORA.getMonth(), ANO=AGORA.getFullYear();
 const cap=t=>t.charAt(0).toUpperCase()+t.slice(1);
 
-/* ------------------------- banco de dados local ------------------------- */
+/* ------------------------- banco de dados (Supabase) ------------------------- */
 function novoDB(){return {user:null,banco:"",cartoes:[],cats:JSON.parse(JSON.stringify(CATS_PADRAO)),
   entradas:[],fixas:[],caixinhas:[],gastos:[],parcelas:[],produtos:[],onboarded:false};}
-let DB, CAT;
-function carregar(){
-  try{const r=localStorage.getItem("conta.db");DB=r?JSON.parse(r):novoDB();}
-  catch(e){DB=novoDB();}
-  if(!DB.cats||!Object.keys(DB.cats).length) DB.cats=JSON.parse(JSON.stringify(CATS_PADRAO));
-  CAT=DB.cats;
+let DB = novoDB(), CAT = DB.cats;
+let UID = null; // id do usuário logado (auth.uid())
+
+/* busca tudo do usuário logado e monta o objeto DB no formato que as telas esperam */
+async function carregarDoServidor(uid){
+  const [perfil, cats, cartoes, entradas, fixas, caixinhas, gastos, produtos, hist] = await Promise.all([
+    sb.from("profiles").select("*").eq("id", uid).maybeSingle(),
+    sb.from("categories").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("cards").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("incomes").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("fixed_expenses").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("savings").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("expenses").select("*").eq("user_id", uid).order("data"),
+    sb.from("products").select("*").eq("user_id", uid).order("created_at"),
+    sb.from("product_price_history").select("*").eq("user_id", uid).order("data"),
+  ]);
+
+  const catsObj = {};
+  (cats.data||[]).forEach(c=>{ catsObj[c.chave] = {id:c.id, nome:c.nome, cor:c.cor}; });
+
+  const histPorProduto = {};
+  (hist.data||[]).forEach(h=>{ (histPorProduto[h.product_id] ||= []).push({id:h.id, data:h.data, mercado:h.mercado, preco:+h.preco}); });
+
+  DB = {
+    user: { id:uid, nome: perfil.data?.nome || "" },
+    banco: perfil.data?.banco || "",
+    onboarded: !!perfil.data?.onboarded,
+    cats: Object.keys(catsObj).length ? catsObj : JSON.parse(JSON.stringify(CATS_PADRAO)),
+    cartoes: (cartoes.data||[]).map(c=>({id:c.id, nome:c.nome})),
+    entradas: (entradas.data||[]).map(e=>({id:e.id, desc:e.descricao, valor:+e.valor, dia:e.dia})),
+    fixas: (fixas.data||[]).map(f=>({id:f.id, desc:f.descricao, valor:+f.valor, dia:f.dia, cat:f.cat})),
+    caixinhas: (caixinhas.data||[]).map(c=>({id:c.id, desc:c.descricao, aporte:+c.aporte, dia:c.dia})),
+    gastos: (gastos.data||[]).map(g=>({id:g.id, desc:g.descricao, valor:+g.valor, cat:g.cat, obs:g.obs||"", cartao:g.cartao||"", data:g.data, semNota:g.sem_nota})),
+    produtos: (produtos.data||[]).map(p=>({id:p.id, nome:p.nome, marca:p.marca||"", qtd:+p.qtd||1, hist:histPorProduto[p.id]||[]})),
+    parcelas: [],
+  };
+  CAT = DB.cats;
 }
-function salvar(){try{localStorage.setItem("conta.db",JSON.stringify(DB));}catch(e){}}
-function hashSenha(t){let a=5381,b=52711;for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);a=((a*33)^c)>>>0;b=((b*31)+c)>>>0;}return a.toString(16)+"."+b.toString(16);}
+
+/* inserção genérica: grava no Supabase e devolve a linha com id */
+async function inserir(tabela, linha){
+  const { data, error } = await sb.from(tabela).insert({...linha, user_id:UID}).select().single();
+  if(error){ throw error; }
+  return data;
+}
+async function remover(tabela, id){
+  const { error } = await sb.from(tabela).delete().eq("id", id).eq("user_id", UID);
+  if(error) throw error;
+}
+async function atualizar(tabela, id, campos){
+  const { error } = await sb.from(tabela).update(campos).eq("id", id).eq("user_id", UID);
+  if(error) throw error;
+}
 
 const brl=v=>(isFinite(v)?v:0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 function num(x){
@@ -349,36 +399,60 @@ function barras(pj){
 
 /* ====================== AUTENTICAÇÃO E ONBOARDING ====================== */
 
+function telaBoot(){
+  return `<div class="fade" style="height:70%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+    <div class="spin"></div>
+    <p style="font-size:13px;color:var(--t3)">Carregando sua conta…</p>
+  </div>`;
+}
+
+function telaBoas(){
+  return `<div class="pad fade" style="padding-top:56px">
+    <p class="eyebrow" style="margin-bottom:10px">Conta</p>
+    <h1 style="margin-bottom:8px">Organize suas finanças</h1>
+    <p class="sub" style="margin-bottom:26px">Seus dados ficam guardados na nuvem, com login de verdade — acesse de qualquer aparelho.</p>
+    <button class="primary" data-act="ir-criar">Criar conta →</button>
+    <button class="ghost" data-act="ir-login">Já tenho conta · Entrar</button>
+  </div>`;
+}
+
 function telaCriar(){
   return `<div class="pad fade" style="padding-top:48px">
     <p class="eyebrow" style="margin-bottom:10px">Bem-vindo ao Conta</p>
     <h1 style="margin-bottom:8px">Criar sua conta</h1>
-    <p class="sub" style="margin-bottom:26px">Tudo fica salvo só neste aparelho, no navegador. Nada vai para a internet — a senha tranca o app aqui, não é uma conta na nuvem.</p>
-    ${campo("f-user","Nome de usuário","como você quer ser chamado")}
-    ${campo("f-pass","Senha","mínimo 4 caracteres","password")}
+    <p class="sub" style="margin-bottom:26px">Seus dados ficam guardados com segurança na nuvem — acesse de qualquer aparelho com seu e-mail e senha.</p>
+    ${campo("f-user","Como você quer ser chamado","seu nome")}
+    ${campo("f-email","E-mail","voce@exemplo.com","email")}
+    ${campo("f-pass","Senha","mínimo 6 caracteres","password")}
     ${campo("f-pass2","Confirmar a senha","repita a senha","password")}
     ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
     <button class="primary" data-act="criar">Criar conta e continuar →</button>
-    <small class="hint">Importante: se você limpar os dados do navegador ou esquecer a senha, o app recomeça do zero. Faça disso um hábito: os dados são seus e só seus.</small>
+    <button class="ghost" data-act="ir-login">Já tenho conta · Entrar</button>
+  </div>`;
+}
+
+function telaConfirmeEmail(){
+  return `<div class="pad fade" style="padding-top:56px">
+    <p class="eyebrow" style="margin-bottom:10px">Quase lá</p>
+    <h1 style="margin-bottom:8px">Confirme seu e-mail</h1>
+    <p class="sub" style="margin-bottom:26px">Enviamos um link de confirmação para <span style="color:#e5e5e5">${esc(S.tmp.emailPendente||"")}</span>. Toque no link e depois volte aqui.</p>
+    ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
+    <button class="primary" data-act="ja-confirmei">Já confirmei · Entrar →</button>
   </div>`;
 }
 
 function telaLogin(){
   return `<div class="pad fade" style="padding-top:48px">
     <p class="eyebrow" style="margin-bottom:10px">Conta</p>
-    <h1 style="margin-bottom:8px">Olá, ${esc(DB.user.nome)}</h1>
-    <p class="sub" style="margin-bottom:26px">Digite sua senha para entrar.</p>
+    <h1 style="margin-bottom:8px">Entrar</h1>
+    <p class="sub" style="margin-bottom:26px">Digite seu e-mail e senha.</p>
+    ${campo("f-login-email","E-mail","voce@exemplo.com")}
     ${campo("f-login-pass","Senha","sua senha","password")}
     ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
+    ${S.tmp.msg?`<p style="font-size:12px;color:var(--down);margin-top:10px;line-height:1.5">${esc(S.tmp.msg)}</p>`:""}
     <button class="primary" data-act="entrar">Entrar →</button>
-    ${S.confirmaReset
-      ? `<div class="card" style="margin-top:20px;border-color:#3d1a1a">
-          <p style="font-size:13.5px;color:var(--up)">Apagar tudo e recomeçar?</p>
-          <p style="font-size:12px;color:var(--t4);margin:6px 0 12px;line-height:1.5">Sem senha não há como recuperar: todos os lançamentos deste aparelho serão apagados de vez.</p>
-          <button class="ghost" data-act="reset2" style="margin-top:0;border-color:#5b2727;color:var(--up)">Sim, apagar meus dados</button>
-          <button class="ghost" data-act="reset0" style="margin-top:8px">Cancelar</button>
-        </div>`
-      : `<button class="ghost" data-act="reset1">Esqueci a senha · recomeçar do zero</button>`}
+    <button class="ghost" data-act="esqueci">Esqueci minha senha</button>
+    <button class="ghost" data-act="ir-criar" style="border-color:transparent;color:var(--t4)">Criar uma conta nova</button>
   </div>`;
 }
 
@@ -405,6 +479,17 @@ function telaOnb1(){
     ${lista?`<div class="rows" style="margin-top:14px">${lista}</div>`:""}
     ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
     <button class="primary" data-act="onb1ok">Continuar →</button>
+    ${S.tmp.volta?`
+    <button class="ghost" data-act="sair">Sair da conta</button>
+    <div class="card" style="margin-top:20px;border-color:#3d1a1a">
+      ${S.confirmaReset
+        ? `<p style="font-size:13.5px;color:var(--up)">Apagar todos os lançamentos?</p>
+           <p style="font-size:12px;color:var(--t4);margin:6px 0 12px;line-height:1.5">Entradas, contas fixas, caixinhas, gastos e cartões somem para sempre. Sua conta e seu login continuam existindo.</p>
+           <button class="ghost" data-act="apagardados2" style="margin-top:0;border-color:#5b2727;color:var(--up)">Sim, apagar meus lançamentos</button>
+           <button class="ghost" data-act="apagardados0" style="margin-top:8px">Cancelar</button>`
+        : `<p style="font-size:13px;color:var(--t4)">Zona de risco</p>
+           <button class="ghost" data-act="apagardados1" style="margin-top:10px;color:var(--up);border-color:#3d1a1a">Apagar todos os meus lançamentos</button>`}
+    </div>`:""}
   </div>`;
 }
 
@@ -831,7 +916,7 @@ const TABS = [
 ];
 
 const TELAS = {inicio:telaInicio, nota:telaNota, precos:telaPrecos, cartao:telaCartao};
-const AUTH  = {criar:telaCriar, login:telaLogin, onb1:telaOnb1, onb2:telaOnb2, onb3:telaOnb3};
+const AUTH  = {boot:telaBoot, boas:telaBoas, criar:telaCriar, login:telaLogin, confirme:telaConfirmeEmail, onb1:telaOnb1, onb2:telaOnb2, onb3:telaOnb3};
 
 function render(){
   const app = document.getElementById("app"), nav = document.getElementById("nav");
@@ -858,7 +943,16 @@ function snap(){
 function limpar(...ids){ ids.forEach(id=>delete S.tmp.vals[id]); S.tmp.erro=""; }
 const V = id => (S.tmp.vals[id]||"").trim();
 
-document.addEventListener("click", e=>{
+function erroAmigavel(e){
+  const m = (e && e.message) || "";
+  if(m.includes("already registered") || m.includes("already exists")) return "Esse e-mail já tem uma conta. Toque em Entrar.";
+  if(m.includes("Invalid login credentials")) return "E-mail ou senha incorretos.";
+  if(m.includes("Password should be at least")) return "A senha precisa de pelo menos 6 caracteres.";
+  if(m.includes("Unable to validate email") || m.includes("invalid")) return "Digite um e-mail válido.";
+  return "Não deu para completar agora. Tente de novo em instantes.";
+}
+
+document.addEventListener("click", async e=>{
   const b = e.target.closest("[data-tab],[data-go],[data-scan],[data-prod],[data-cat],[data-act],[data-form],[data-banco],[data-selcat],[data-cor],[data-del]");
   if(!b) return;
   snap();
@@ -893,68 +987,150 @@ document.addEventListener("click", e=>{
   /* remoções */
   if(b.dataset.del){
     const [tipo,ref] = b.dataset.del.split("|");
-    if(tipo==="cartao")   DB.cartoes.splice(+ref,1);
-    if(tipo==="entrada")  DB.entradas.splice(+ref,1);
-    if(tipo==="fixa")     DB.fixas.splice(+ref,1);
-    if(tipo==="caixinha") DB.caixinhas.splice(+ref,1);
-    if(tipo==="gasto")    DB.gastos.splice(+ref,1);
-    if(tipo==="cat" && ref!=="outros"){
-      delete DB.cats[ref];
-      DB.gastos.forEach(g=>{ if(g.cat===ref) g.cat="outros"; });
-      DB.fixas.forEach(f=>{ if(f.cat===ref) f.cat="outros"; });
-    }
-    salvar(); return render();
+    try{
+      if(tipo==="cartao"){   const it=DB.cartoes[+ref];   await remover("cards", it.id);           DB.cartoes.splice(+ref,1); }
+      if(tipo==="entrada"){  const it=DB.entradas[+ref];  await remover("incomes", it.id);         DB.entradas.splice(+ref,1); }
+      if(tipo==="fixa"){     const it=DB.fixas[+ref];     await remover("fixed_expenses", it.id);  DB.fixas.splice(+ref,1); }
+      if(tipo==="caixinha"){ const it=DB.caixinhas[+ref]; await remover("savings", it.id);         DB.caixinhas.splice(+ref,1); }
+      if(tipo==="gasto"){    const it=DB.gastos[+ref];    await remover("expenses", it.id);        DB.gastos.splice(+ref,1); }
+      if(tipo==="cat" && ref!=="outros"){
+        const catId = DB.cats[ref] && DB.cats[ref].id;
+        if(catId) await remover("categories", catId);
+        await Promise.all([
+          sb.from("expenses").update({cat:"outros"}).eq("user_id",UID).eq("cat",ref),
+          sb.from("fixed_expenses").update({cat:"outros"}).eq("user_id",UID).eq("cat",ref),
+        ]);
+        delete DB.cats[ref];
+        DB.gastos.forEach(g=>{ if(g.cat===ref) g.cat="outros"; });
+        DB.fixas.forEach(f=>{ if(f.cat===ref) f.cat="outros"; });
+      }
+    }catch(err){ /* mantém como estava localmente se a exclusão falhar */ }
+    return render();
   }
 
   const act = b.dataset.act;
   if(!act) return;
 
   /* conta e sessão */
+  if(act==="ir-criar"){ S.tmp.erro=""; S.view="criar"; return render(); }
+  if(act==="ir-login"){ S.tmp.erro=""; S.tmp.msg=""; S.view="login"; return render(); }
+
   if(act==="criar"){
-    const u=V("f-user"), p=S.tmp.vals["f-pass"]||"", p2=S.tmp.vals["f-pass2"]||"";
-    if(!u){ S.tmp.erro="Escolha um nome de usuário."; return render(); }
-    if(p.length<4){ S.tmp.erro="A senha precisa de pelo menos 4 caracteres."; return render(); }
+    const u=V("f-user"), email=V("f-email"), p=S.tmp.vals["f-pass"]||"", p2=S.tmp.vals["f-pass2"]||"";
+    if(!u){ S.tmp.erro="Escolha como você quer ser chamado."; return render(); }
+    if(!email.includes("@")){ S.tmp.erro="Digite um e-mail válido."; return render(); }
+    if(p.length<6){ S.tmp.erro="A senha precisa de pelo menos 6 caracteres."; return render(); }
     if(p!==p2){ S.tmp.erro="As senhas não coincidem — digite a mesma nas duas."; return render(); }
-    DB.user={nome:u, hash:hashSenha(p)}; salvar();
-    limpar("f-user","f-pass","f-pass2");
-    S.view="onb1"; return render();
-  }
-  if(act==="entrar"){
-    if(hashSenha(S.tmp.vals["f-login-pass"]||"")===DB.user.hash){
-      limpar("f-login-pass");
-      S.view = DB.onboarded ? "app" : "onb1";
-    } else S.tmp.erro="Senha incorreta.";
+    const { data, error } = await sb.auth.signUp({ email, password:p, options:{ data:{ nome:u } } });
+    if(error){ S.tmp.erro=erroAmigavel(error); return render(); }
+    limpar("f-user","f-email","f-pass","f-pass2");
+    if(data.session){
+      UID = data.user.id;
+      await carregarDoServidor(UID);
+      S.view = DB.onboarded ? "app" : "onb1"; S.tab="inicio";
+    } else {
+      S.tmp.emailPendente = email; S.view="confirme";
+    }
     return render();
   }
-  if(act==="reset1"){ S.confirmaReset=true;  return render(); }
-  if(act==="reset0"){ S.confirmaReset=false; return render(); }
-  if(act==="reset2"){
-    try{localStorage.removeItem("conta.db");}catch(e){}
-    DB=novoDB(); CAT=DB.cats; S.confirmaReset=false; S.tmp.vals={}; S.tmp.erro="";
-    S.view="criar"; return render();
+
+  if(act==="ja-confirmei"){
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session){
+      UID = session.user.id;
+      await carregarDoServidor(UID);
+      S.view = DB.onboarded ? "app" : "onb1"; S.tab="inicio"; S.tmp.erro="";
+    } else {
+      S.tmp.erro = "Ainda não encontramos a confirmação. Toque no link do e-mail e volte aqui.";
+    }
+    return render();
   }
+
+  if(act==="entrar"){
+    const email=V("f-login-email"), p=S.tmp.vals["f-login-pass"]||"";
+    if(!email || !p){ S.tmp.erro="Preencha e-mail e senha."; return render(); }
+    const { data, error } = await sb.auth.signInWithPassword({ email, password:p });
+    if(error){ S.tmp.erro=erroAmigavel(error); return render(); }
+    UID = data.user.id;
+    await carregarDoServidor(UID);
+    limpar("f-login-email","f-login-pass"); S.tmp.msg="";
+    S.view = DB.onboarded ? "app" : "onb1"; S.tab="inicio";
+    return render();
+  }
+
+  if(act==="esqueci"){
+    const email=V("f-login-email");
+    if(!email){ S.tmp.erro="Digite seu e-mail acima para receber o link de redefinição."; return render(); }
+    const redirectTo = window.location.href.split("#")[0].split("?")[0];
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+    S.tmp.erro = "";
+    S.tmp.msg = error ? "Não deu para enviar agora. Tente de novo em instantes." : `Enviamos um link de redefinição para ${email}.`;
+    return render();
+  }
+
+  if(act==="sair"){
+    try{ await sb.auth.signOut(); }catch(err){}
+    DB=novoDB(); CAT=DB.cats; UID=null;
+    S.tmp={vals:{},erro:"",banco:"",cor:PALETA[6],gcat:"mercado",ccat:"mercado",volta:false};
+    S.confirmaReset=false; S.view="boas"; return render();
+  }
+
   if(act==="ajustes"){ S.tmp.volta=true; S.tmp.banco=DB.banco; S.view="onb1"; return render(); }
 
   /* onboarding */
-  if(act==="addcartao"){
-    const n=V("f-cartao");
+  if(act==="addcartao" || act==="save-cartao"){
+    const id = act==="addcartao" ? "f-cartao" : "f-cc-nome";
+    const n=V(id);
     if(!n){ S.tmp.erro="Digite o nome do cartão antes de adicionar."; return render(); }
-    DB.cartoes.push({nome:n}); salvar(); limpar("f-cartao"); return render();
+    try{
+      const row = await inserir("cards", { nome:n });
+      DB.cartoes.push({ id:row.id, nome:row.nome });
+      limpar(id); if(act==="save-cartao") S.form=null;
+    }catch(err){ S.tmp.erro="Não deu para salvar o cartão agora."; }
+    return render();
   }
-  if(act==="onb1ok"){ DB.banco=S.tmp.banco||DB.banco; salvar(); S.tmp.erro=""; S.view="onb2"; return render(); }
+  if(act==="onb1ok"){
+    const banco = S.tmp.banco || DB.banco;
+    try{ await atualizar("profiles", UID, { banco }); DB.banco = banco; }catch(err){}
+    S.tmp.erro=""; S.view="onb2"; return render();
+  }
   if(act==="addcat"){
     const n=V("f-cat");
     if(!n){ S.tmp.erro="Digite o nome da categoria antes de adicionar."; return render(); }
     const k=n.toLowerCase().normalize("NFD").replace(/[^\w]/g,"").slice(0,20)||("cat"+Date.now());
     if(DB.cats[k]){ S.tmp.erro="Já existe uma categoria com esse nome."; return render(); }
-    DB.cats[k]={nome:cap(n), cor:S.tmp.cor}; salvar(); limpar("f-cat"); return render();
+    try{
+      const row = await inserir("categories", { chave:k, nome:cap(n), cor:S.tmp.cor });
+      DB.cats[k] = { id:row.id, nome:row.nome, cor:row.cor }; CAT = DB.cats;
+      limpar("f-cat");
+    }catch(err){ S.tmp.erro="Já existe uma categoria com esse nome ou não deu para salvar agora."; }
+    return render();
   }
   if(act==="onb2ok"){
-    salvar(); S.tmp.erro="";
+    S.tmp.erro="";
     if(S.tmp.volta){ S.tmp.volta=false; S.view="app"; } else S.view="onb3";
     return render();
   }
-  if(act==="fim"){ DB.onboarded=true; salvar(); S.view="app"; S.tab="inicio"; return render(); }
+  if(act==="fim"){
+    try{ await atualizar("profiles", UID, { onboarded:true }); }catch(err){}
+    DB.onboarded=true; S.view="app"; S.tab="inicio"; return render();
+  }
+
+  if(act==="apagardados1"){ S.confirmaReset=true;  return render(); }
+  if(act==="apagardados0"){ S.confirmaReset=false; return render(); }
+  if(act==="apagardados2"){
+    try{
+      await Promise.all([
+        sb.from("incomes").delete().eq("user_id",UID),
+        sb.from("fixed_expenses").delete().eq("user_id",UID),
+        sb.from("savings").delete().eq("user_id",UID),
+        sb.from("expenses").delete().eq("user_id",UID),
+        sb.from("cards").delete().eq("user_id",UID),
+      ]);
+      await carregarDoServidor(UID);
+    }catch(err){}
+    S.confirmaReset=false; S.view="app"; S.tab="inicio"; return render();
+  }
 
   /* lançamentos */
   if(act==="manual"){ S.tab="nota"; S.nota="manual"; S.tmp.erro=""; return render(); }
@@ -964,23 +1140,35 @@ document.addEventListener("click", e=>{
     const d=V("f-en-desc"), v=num(V("f-en-valor")), dia=Math.min(31,Math.max(1,parseInt(V("f-en-dia"))||1));
     if(!d){ S.tmp.erro="Dê um nome à entrada."; return render(); }
     if(v<=0){ S.tmp.erro="Informe um valor maior que zero."; return render(); }
-    DB.entradas.push({desc:d,valor:v,dia}); salvar();
-    limpar("f-en-desc","f-en-valor","f-en-dia"); S.form=null; return render();
+    try{
+      const row = await inserir("incomes", { descricao:d, valor:v, dia });
+      DB.entradas.push({ id:row.id, desc:row.descricao, valor:+row.valor, dia:row.dia });
+      limpar("f-en-desc","f-en-valor","f-en-dia"); S.form=null;
+    }catch(err){ S.tmp.erro="Não deu para salvar a entrada agora."; }
+    return render();
   }
   if(act==="save-fixa"){
     const d=V("f-fx-desc"), v=num(V("f-fx-valor")), dia=Math.min(31,Math.max(1,parseInt(V("f-fx-dia"))||1));
     const cat=S.tmp.vals["f-fx-cat"]||"casa";
     if(!d){ S.tmp.erro="Dê um nome à conta fixa."; return render(); }
     if(v<=0){ S.tmp.erro="Informe um valor maior que zero."; return render(); }
-    DB.fixas.push({desc:d,valor:v,dia,cat}); salvar();
-    limpar("f-fx-desc","f-fx-valor","f-fx-dia"); S.form=null; return render();
+    try{
+      const row = await inserir("fixed_expenses", { descricao:d, valor:v, dia, cat });
+      DB.fixas.push({ id:row.id, desc:row.descricao, valor:+row.valor, dia:row.dia, cat:row.cat });
+      limpar("f-fx-desc","f-fx-valor","f-fx-dia"); S.form=null;
+    }catch(err){ S.tmp.erro="Não deu para salvar a conta fixa agora."; }
+    return render();
   }
   if(act==="save-caixinha"){
     const d=V("f-cx-desc"), v=num(V("f-cx-valor")), dia=Math.min(31,Math.max(1,parseInt(V("f-cx-dia"))||1));
     if(!d){ S.tmp.erro="Dê um nome à caixinha."; return render(); }
     if(v<=0){ S.tmp.erro="Informe um aporte maior que zero."; return render(); }
-    DB.caixinhas.push({desc:d,aporte:v,dia}); salvar();
-    limpar("f-cx-desc","f-cx-valor","f-cx-dia"); S.form=null; return render();
+    try{
+      const row = await inserir("savings", { descricao:d, aporte:v, dia });
+      DB.caixinhas.push({ id:row.id, desc:row.descricao, aporte:+row.aporte, dia:row.dia });
+      limpar("f-cx-desc","f-cx-valor","f-cx-dia"); S.form=null;
+    }catch(err){ S.tmp.erro="Não deu para salvar a caixinha agora."; }
+    return render();
   }
   if(act==="save-gasto" || act==="save-semnota"){
     const pfx = act==="save-gasto" ? "g" : "c";
@@ -989,18 +1177,33 @@ document.addEventListener("click", e=>{
     const cat=S.tmp[pfx==="g"?"gcat":"ccat"]||"outros";
     if(!d){ S.tmp.erro="Diga onde foi ou o que foi o gasto."; return render(); }
     if(v<=0){ S.tmp.erro="Informe um valor maior que zero."; return render(); }
-    DB.gastos.push({desc:d,valor:v,cat,obs,cartao,data:new Date().toISOString(),semNota:pfx==="c"});
-    salvar();
-    limpar(`f-${pfx}-desc`,`f-${pfx}-valor`,`f-${pfx}-obs`);
-    if(pfx==="g"){ S.nota="inicio"; S.tab="inicio"; }
+    try{
+      const row = await inserir("expenses", { descricao:d, valor:v, cat, obs, cartao, data:new Date().toISOString(), sem_nota:pfx==="c" });
+      DB.gastos.push({ id:row.id, desc:row.descricao, valor:+row.valor, cat:row.cat, obs:row.obs||"", cartao:row.cartao||"", data:row.data, semNota:row.sem_nota });
+      limpar(`f-${pfx}-desc`,`f-${pfx}-valor`,`f-${pfx}-obs`);
+      if(pfx==="g"){ S.nota="inicio"; S.tab="inicio"; }
+    }catch(err){ S.tmp.erro="Não deu para salvar o gasto agora."; }
     return render();
   }
 });
 
 /* ------------------------------ boot ------------------------------ */
-carregar();
-S.view = DB.user ? "login" : "criar";
-render();
+async function boot(){
+  S.view = "boot"; render();
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){
+    UID = session.user.id;
+    try{ await carregarDoServidor(UID); S.view = DB.onboarded ? "app" : "onb1"; S.tab="inicio"; }
+    catch(err){ S.view = "boas"; }
+  } else {
+    S.view = "boas";
+  }
+  render();
+}
+sb.auth.onAuthStateChange((event)=>{
+  if(event==="SIGNED_OUT" && S.view!=="boas"){ DB=novoDB(); CAT=DB.cats; UID=null; S.view="boas"; render(); }
+});
+boot();
 </script>
 </body>
 </html>
