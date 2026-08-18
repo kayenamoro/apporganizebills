@@ -3,17 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<title>Conta</title>
+<title>BillsPlan</title>
 
 <!-- iOS: vira app de tela cheia ao adicionar na tela de início -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Conta">
+<meta name="apple-mobile-web-app-title" content="BillsPlan">
 <meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 
-<!-- ícone da tela de início (SVG embutido, sem arquivo externo) -->
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%23000'/%3E%3Cg%3E%3Crect x='40' y='118' width='14' height='24' rx='3' fill='%234ADE80'/%3E%3Crect x='62' y='96' width='14' height='46' rx='3' fill='%23FB923C'/%3E%3Crect x='84' y='70' width='14' height='72' rx='3' fill='%2360A5FA'/%3E%3Crect x='106' y='52' width='14' height='90' rx='3' fill='%23C084FC'/%3E%3Crect x='128' y='84' width='14' height='58' rx='3' fill='%23FACC15'/%3E%3C/g%3E%3C/svg%3E">
+<!-- ícone do app -->
+<link rel="icon" href="./icons/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./icons/icon-16.png">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="manifest" href="./manifest.json">
 
 <style>
   :root{
@@ -154,7 +158,7 @@
 
 <div id="frame">
   <header>
-    <span class="brand">Conta</span>
+    <span class="brand">BillsPlan</span>
     <button id="ajustes" class="tag" data-act="ajustes" style="background:none;border:0;cursor:pointer;font-family:inherit;visibility:hidden">ajustes</button>
   </header>
   <main id="app"></main>
@@ -162,6 +166,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
 /* =====================================================================
    CONTA — dados reais, salvos na nuvem (Supabase). Login de verdade,
@@ -258,24 +264,9 @@ function num(x){
 }
 const esc=t=>String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
-/* --------------------- nota de demonstração do scanner --------------------- */
-const notaDemo = {
-  mercado:"Super Muffato — Loja Centro",
-  cnpj:"79.086.938/0012-40",
-  data:"10/07/2026 · 19:42",
-  itens:[
-    {desc:"ARROZ TIO JOAO T1 5KG",   qtd:1, un:21.90, cat:"mercado"},
-    {desc:"CAFE MELITTA TRAD 500G",  qtd:2, un:29.40, cat:"mercado"},
-    {desc:"LEITE PIRACANJUBA 1L",    qtd:6, un:5.09,  cat:"mercado"},
-    {desc:"DETERGENTE YPE 500ML",    qtd:3, un:2.19,  cat:"casa"},
-    {desc:"SABAO PO OMO 1,6KG",      qtd:1, un:28.90, cat:"casa"},
-    {desc:"CERVEJA HEINEKEN 350ML",  qtd:6, un:5.49,  cat:"lazer"}
-  ]
-};
-
 /* ------------------------------ estado ------------------------------ */
 const S = { view:"boot", tab:"inicio", nota:"inicio",
-  itens:JSON.parse(JSON.stringify(notaDemo.itens)), prod:0, form:null,
+  itens:[], notaLida:null, faturaLida:null, faturaCartao:"", prod:0, form:null,
   tmp:{vals:{},erro:"",banco:"",cor:PALETA[6],gcat:"mercado",ccat:"mercado",volta:false},
   confirmaReset:false };
 
@@ -408,7 +399,7 @@ function telaBoot(){
 
 function telaBoas(){
   return `<div class="pad fade" style="padding-top:56px">
-    <p class="eyebrow" style="margin-bottom:10px">Conta</p>
+    <p class="eyebrow" style="margin-bottom:10px">BillsPlan</p>
     <h1 style="margin-bottom:8px">Organize suas finanças</h1>
     <p class="sub" style="margin-bottom:26px">Seus dados ficam guardados na nuvem, com login de verdade — acesse de qualquer aparelho.</p>
     <button class="primary" data-act="ir-criar">Criar conta →</button>
@@ -418,7 +409,7 @@ function telaBoas(){
 
 function telaCriar(){
   return `<div class="pad fade" style="padding-top:48px">
-    <p class="eyebrow" style="margin-bottom:10px">Bem-vindo ao Conta</p>
+    <p class="eyebrow" style="margin-bottom:10px">Bem-vindo ao BillsPlan</p>
     <h1 style="margin-bottom:8px">Criar sua conta</h1>
     <p class="sub" style="margin-bottom:26px">Seus dados ficam guardados com segurança na nuvem — acesse de qualquer aparelho com seu e-mail e senha.</p>
     ${campo("f-user","Como você quer ser chamado","seu nome")}
@@ -443,7 +434,7 @@ function telaConfirmeEmail(){
 
 function telaLogin(){
   return `<div class="pad fade" style="padding-top:48px">
-    <p class="eyebrow" style="margin-bottom:10px">Conta</p>
+    <p class="eyebrow" style="margin-bottom:10px">BillsPlan</p>
     <h1 style="margin-bottom:8px">Entrar</h1>
     <p class="sub" style="margin-bottom:26px">Digite seu e-mail e senha.</p>
     ${campo("f-login-email","E-mail","voce@exemplo.com")}
@@ -717,26 +708,47 @@ function telaNota(){
   if(S.nota==="inicio"){
     return `<div class="pad fade" style="padding-top:22px">
       <h1>Adicionar compra</h1>
-      <p class="sub" style="margin-bottom:26px">Aponte para o QR code da nota. A leitura traz os itens já separados.</p>
+      <p class="sub" style="margin-bottom:26px">Aponte para o QR code da nota. A leitura busca os dados oficiais na Sefaz e separa os itens.</p>
       <button class="scan" data-scan="1">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#6b6b6b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         <span style="font-size:14px;color:var(--t3)">Escanear nota fiscal</span>
-        <span style="font-size:11px;color:#4a4a4a">demonstração — a leitura real entra na fase com servidor</span>
+        <span style="font-size:11px;color:#4a4a4a">usa a câmera e consulta a nota oficial</span>
       </button>
       <div style="display:flex;flex-direction:column;gap:9px;margin-top:22px">
         <button class="tile" data-act="manual"><span style="flex:1;font-size:13.5px;color:var(--t2)">Lançar gasto manualmente</span>
           <svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
       </div>
-      <small class="hint">Toda nota fiscal de consumidor no Brasil tem QR code. Ler o código traz os itens com código de barras e preço unitário — mais confiável que ler a foto do papel.</small>
+      <small class="hint">Toda nota fiscal de consumidor no Brasil tem QR code. A leitura funciona melhor com boa luz e a câmera parada por um instante sobre o código.</small>
     </div>`;
   }
 
-  if(S.nota==="lendo"){
+  if(S.nota==="camera"){
+    return `<div class="fade" style="position:relative;height:68vh;background:#000;border-radius:14px;overflow:hidden">
+      <video id="cam-video" playsinline autoplay muted style="width:100%;height:100%;object-fit:cover;display:block"></video>
+      <canvas id="cam-canvas" style="display:none"></canvas>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:220px;height:220px;border:2px solid rgba(255,255,255,.55);border-radius:18px"></div>
+      </div>
+      <p style="position:absolute;top:16px;left:0;right:0;text-align:center;color:#fff;font-size:13px;text-shadow:0 1px 4px rgba(0,0,0,.6)">Aponte para o QR code da nota</p>
+      <button class="ghost" data-scan="cancel" style="position:absolute;bottom:14px;left:16px;right:16px;background:rgba(0,0,0,.55);margin-top:0">Cancelar</button>
+    </div>`;
+  }
+
+  if(S.nota==="processando"){
     return `<div class="fade" style="height:70%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
       <div class="spin"></div>
       <p style="font-size:14px;color:var(--t2)">Lendo a nota</p>
-      <p style="font-size:12px;color:#4a4a4a;text-align:center;max-width:230px">Identificando itens e comparando com compras anteriores</p>
+      <p style="font-size:12px;color:#4a4a4a;text-align:center;max-width:230px">Consultando a nota na Sefaz e separando os itens</p>
+    </div>`;
+  }
+
+  if(S.nota==="erro-leitura"){
+    return `<div class="pad fade" style="padding-top:40px">
+      <h1 style="margin-bottom:8px">Não deu pra ler agora</h1>
+      <p class="sub" style="margin-bottom:26px">${esc(S.tmp.erro||"Tente de novo, ou lance manualmente.")}</p>
+      <button class="primary" data-scan="1">Tentar de novo →</button>
+      <button class="ghost" data-act="manual">Lançar manualmente</button>
     </div>`;
   }
 
@@ -750,10 +762,11 @@ function telaNota(){
       <div style="display:flex;gap:11px;align-items:flex-start">
         ${dot((CAT[it.cat]||CAT.outros).cor,7)}
         <span style="flex:1;min-width:0">
-          <span style="font-size:13.5px;color:#e5e5e5;display:block;line-height:1.35">${it.desc}</span>
+          <span style="font-size:13.5px;color:#e5e5e5;display:block;line-height:1.35">${esc(it.desc)}</span>
           <span class="num" style="font-size:11px;color:var(--t4);display:block;margin-top:3px">${it.qtd} × ${brl(it.un)}</span>
         </span>
         <span class="num" style="font-size:13.5px;color:var(--t2)">${brl(it.qtd*it.un)}</span>
+        <button class="xis" data-del="notaitem|${i}" style="padding:0 0 0 6px">✕</button>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:11px;padding-left:19px">${chips}</div>
     </div>`;
@@ -762,15 +775,15 @@ function telaNota(){
   return `<div class="fade">
     <div class="pad" style="padding-top:22px;padding-bottom:20px;border-bottom:1px solid var(--line)">
       <p style="font-size:10.5px;text-transform:uppercase;letter-spacing:.19em;color:var(--down);margin-bottom:11px">✓ Nota lida</p>
-      <p style="font-size:17px">${notaDemo.mercado}</p>
-      <p class="num" style="font-size:11.5px;color:var(--t4);margin-top:5px">${notaDemo.data} · CNPJ ${notaDemo.cnpj}</p>
+      <p style="font-size:17px">${esc(S.notaLida?.mercado||"Nota fiscal")}</p>
+      <p class="num" style="font-size:11.5px;color:var(--t4);margin-top:5px">${esc(S.notaLida?.data||"")}${S.notaLida?.cnpj?" · CNPJ "+esc(S.notaLida.cnpj):""}</p>
       <p class="num mid" style="margin-top:16px">${brl(total)}</p>
     </div>
     <div class="pad" style="padding-top:16px">
       <p class="eyebrow" style="margin-bottom:12px">${S.itens.length} itens · toque para trocar a categoria</p>
       ${itens}
-      <button class="primary" data-scan="0">Concluir demonstração →</button>
-      <small class="hint">Esta nota é um exemplo e não entra nos seus lançamentos. Quando a leitura real estiver ativa, é assim que cada nota vai chegar para você revisar.</small>
+      <button class="primary" data-act="save-nota-itens">Salvar ${S.itens.length} ${S.itens.length===1?"item":"itens"} →</button>
+      <small class="hint">Separamos por descrição e valor lidos da nota — confira as categorias antes de salvar. Quantidade e preço unitário exatos por item ainda não vêm da leitura; cada item entra pelo valor total dele.</small>
     </div>
   </div>`;
 }
@@ -900,9 +913,15 @@ function telaCartao(){
       <button class="primary" data-act="save-semnota" style="margin-top:6px">Salvar registro →</button>
     </div></div>`)}
     ${semNota?sec("Observações","o que cada compra foi",`<div class="pad">${semNota}</div>`):""}
-    ${sec("Parcelamentos","",`<div class="pad"><div class="card">
-      <p style="font-size:12px;color:var(--t4);line-height:1.6">As parcelas em aberto aparecem aqui quando a leitura de fatura em PDF estiver ativa, na próxima fase.</p>
-    </div></div>`)}
+    ${sec("Importar fatura","PDF do cartão",`<div class="pad">
+      ${DB.cartoes.length
+        ? DB.cartoes.map(c=>`<button class="tile" data-act="pick-fatura" data-cartao-nome="${esc(c.nome)}" style="margin-bottom:7px">
+            <span style="flex:1;font-size:13.5px;color:var(--t2)">Importar fatura · ${esc(c.nome)}</span>
+            <svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>`).join("")
+        : `<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Nomeie um cartão acima para poder importar a fatura dele em PDF.</p></div>`}
+      <input type="file" id="fatura-input" accept="application/pdf" style="display:none">
+      <small class="hint">Lemos o texto do PDF direto no seu aparelho e separamos as compras por data e valor. Cada banco formata diferente — confira antes de salvar.</small>
+    </div>`)}
   </div>`;
 }
 
@@ -943,6 +962,145 @@ function snap(){
 function limpar(...ids){ ids.forEach(id=>delete S.tmp.vals[id]); S.tmp.erro=""; }
 const V = id => (S.tmp.vals[id]||"").trim();
 
+/* ------------------------- leitor de QR (câmera) ------------------------- */
+let scannerStream = null, scannerRAF = null;
+
+async function iniciarScanner(){
+  const video = document.getElementById("cam-video");
+  const canvas = document.getElementById("cam-canvas");
+  if(!video || !canvas) return;
+  try{
+    scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  }catch(err){
+    S.nota = "inicio";
+    S.tmp.erro = "Não consegui acessar a câmera. Verifique se o navegador tem permissão.";
+    return render();
+  }
+  video.srcObject = scannerStream;
+  try{ await video.play(); }catch(err){}
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const tick = () => {
+    if(S.nota !== "camera"){ pararScanner(); return; }
+    if(video.readyState === video.HAVE_ENOUGH_DATA){
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(img.data, img.width, img.height);
+      if(code && code.data){
+        pararScanner();
+        processarQr(code.data);
+        return;
+      }
+    }
+    scannerRAF = requestAnimationFrame(tick);
+  };
+  scannerRAF = requestAnimationFrame(tick);
+}
+
+function pararScanner(){
+  if(scannerRAF) cancelAnimationFrame(scannerRAF);
+  if(scannerStream) scannerStream.getTracks().forEach(t=>t.stop());
+  scannerStream = null; scannerRAF = null;
+}
+
+async function processarQr(texto){
+  S.nota = "processando"; render();
+  try{
+    const { data, error } = await sb.functions.invoke("ler-nota", { body: { qrUrl: texto } });
+    if(error || !data || data.error){
+      S.nota = "erro-leitura";
+      S.tmp.erro = (data && data.error) || "Não consegui ler essa nota. Tente de novo ou lance manualmente.";
+      return render();
+    }
+    S.notaLida = { mercado: data.mercado || "Nota fiscal", cnpj: data.cnpj || "", data: data.data || "" };
+    S.itens = (data.itens||[]).map(it => ({ desc: it.desc, qtd: 1, un: it.valor, cat: "outros" }));
+    if(!S.itens.length){
+      S.nota = "erro-leitura";
+      S.tmp.erro = "A nota foi lida, mas não consegui separar os itens automaticamente dessa vez. Lance manualmente por enquanto.";
+      return render();
+    }
+    S.nota = "revisao";
+  }catch(err){
+    S.nota = "erro-leitura";
+    S.tmp.erro = "Não consegui ler essa nota agora. Tente de novo em instantes.";
+  }
+  render();
+}
+
+/* ------------------------- leitor de fatura (PDF) ------------------------- */
+if(window.pdfjsLib){
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+}
+
+async function extrairLinhasPDF(file){
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const linhas = [];
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    let linhaAtual = "", ultimoY = null;
+    for(const item of content.items){
+      const y = item.transform[5];
+      if(ultimoY !== null && Math.abs(y-ultimoY) > 2){
+        if(linhaAtual.trim()) linhas.push(linhaAtual.trim());
+        linhaAtual = "";
+      }
+      linhaAtual += item.str + " ";
+      ultimoY = y;
+    }
+    if(linhaAtual.trim()) linhas.push(linhaAtual.trim());
+  }
+  return linhas;
+}
+
+function extrairTransacoesFatura(linhas){
+  const transacoes = [];
+  const re = /^(\d{2}\s?\/\s?\d{2}(?:\s?\/\s?\d{2,4})?)\s+(.{3,60}?)\s+(-?\s?R?\$?\s?\d{1,3}(?:\.\d{3})*,\d{2})\s*$/;
+  const ignorar = /pagamento recebido|estorno|saldo anterior|total desta fatura|limite dispon/i;
+  for(const l of linhas){
+    const m = l.match(re);
+    if(!m) continue;
+    if(ignorar.test(m[2])) continue;
+    const valorTxt = m[3].replace(/\s/g,"");
+    if(valorTxt.startsWith("-")) continue; // crédito/pagamento, não é gasto
+    const valor = parseFloat(valorTxt.replace(/R\$/,"").replace(/\./g,"").replace(",", "."));
+    if(valor > 0 && valor < 100000){
+      transacoes.push({ desc: m[2].trim(), valor, data: m[1].replace(/\s/g,"") });
+    }
+  }
+  return transacoes;
+}
+
+async function processarFatura(file, cartaoNome){
+  S.faturaCartao = cartaoNome || "";
+  S.nota = "processando"; S.tab = "nota"; render();
+  try{
+    const linhas = await extrairLinhasPDF(file);
+    const transacoes = extrairTransacoesFatura(linhas);
+    if(!transacoes.length){
+      S.nota = "erro-leitura";
+      S.tmp.erro = "Consegui abrir o PDF, mas não reconheci o formato das transações dessa fatura. Lance manualmente por enquanto.";
+      return render();
+    }
+    S.notaLida = { mercado: `Fatura${cartaoNome?" · "+cartaoNome:""}`, cnpj:"", data:"" };
+    S.itens = transacoes.map(t => ({ desc:t.desc, qtd:1, un:t.valor, cat:"outros", data:t.data }));
+    S.nota = "revisao";
+  }catch(err){
+    S.nota = "erro-leitura";
+    S.tmp.erro = "Não consegui ler esse PDF agora.";
+  }
+  render();
+}
+
+document.addEventListener("change", (e)=>{
+  if(e.target && e.target.id === "fatura-input" && e.target.files && e.target.files[0]){
+    const cartaoNome = e.target.dataset.cartao || "";
+    processarFatura(e.target.files[0], cartaoNome);
+    e.target.value = "";
+  }
+});
+
 function erroAmigavel(e){
   const m = (e && e.message) || "";
   if(m.includes("already registered") || m.includes("already exists")) return "Esse e-mail já tem uma conta. Toque em Entrar.";
@@ -972,15 +1130,15 @@ document.addEventListener("click", async e=>{
     S.itens[+i].cat = k;
     return render();
   }
-  /* fluxo de escanear (demonstração) */
+  /* fluxo de escanear nota fiscal (câmera + leitura real) */
   if(b.dataset.scan === "1"){
-    S.nota = "lendo"; render();
-    setTimeout(()=>{ S.nota="revisao"; render(); }, 1800);
+    S.nota = "camera"; S.tmp.erro=""; render();
+    iniciarScanner();
     return;
   }
-  if(b.dataset.scan === "0"){
+  if(b.dataset.scan === "cancel"){
+    pararScanner();
     S.nota = "inicio";
-    S.itens = JSON.parse(JSON.stringify(notaDemo.itens));
     return render();
   }
 
@@ -993,6 +1151,7 @@ document.addEventListener("click", async e=>{
       if(tipo==="fixa"){     const it=DB.fixas[+ref];     await remover("fixed_expenses", it.id);  DB.fixas.splice(+ref,1); }
       if(tipo==="caixinha"){ const it=DB.caixinhas[+ref]; await remover("savings", it.id);         DB.caixinhas.splice(+ref,1); }
       if(tipo==="gasto"){    const it=DB.gastos[+ref];    await remover("expenses", it.id);        DB.gastos.splice(+ref,1); }
+      if(tipo==="notaitem"){ S.itens.splice(+ref,1); return render(); }
       if(tipo==="cat" && ref!=="outros"){
         const catId = DB.cats[ref] && DB.cats[ref].id;
         if(catId) await remover("categories", catId);
@@ -1076,6 +1235,12 @@ document.addEventListener("click", async e=>{
   }
 
   if(act==="ajustes"){ S.tmp.volta=true; S.tmp.banco=DB.banco; S.view="onb1"; return render(); }
+
+  if(act==="pick-fatura"){
+    const inp = document.getElementById("fatura-input");
+    if(inp){ inp.dataset.cartao = b.dataset.cartaoNome || ""; inp.click(); }
+    return;
+  }
 
   /* onboarding */
   if(act==="addcartao" || act==="save-cartao"){
@@ -1185,6 +1350,23 @@ document.addEventListener("click", async e=>{
     }catch(err){ S.tmp.erro="Não deu para salvar o gasto agora."; }
     return render();
   }
+
+  if(act==="save-nota-itens"){
+    if(!S.itens || !S.itens.length){ S.nota="inicio"; return render(); }
+    try{
+      const dataIso = new Date().toISOString();
+      const ehFatura = !!S.faturaCartao;
+      const obsBase = S.notaLida?.mercado ? (ehFatura ? S.notaLida.mercado : `Nota: ${S.notaLida.mercado}`) : "";
+      for(const it of S.itens){
+        const obs = ehFatura && it.data ? `${obsBase} · ${it.data}` : obsBase;
+        const row = await inserir("expenses", { descricao:it.desc, valor:it.qtd*it.un, cat:it.cat, obs, cartao:S.faturaCartao||"", data:dataIso, sem_nota:false });
+        DB.gastos.push({ id:row.id, desc:row.descricao, valor:+row.valor, cat:row.cat, obs:row.obs||"", cartao:row.cartao||"", data:row.data, semNota:false });
+      }
+      S.itens=[]; S.notaLida=null;
+      S.tab = ehFatura ? "cartao" : "inicio"; S.faturaCartao=""; S.nota="inicio";
+    }catch(err){ S.tmp.erro="Salvei parte dos itens, mas algo falhou no meio do caminho. Confira seus lançamentos antes de repetir."; }
+    return render();
+  }
 });
 
 /* ------------------------------ boot ------------------------------ */
@@ -1203,6 +1385,9 @@ async function boot(){
 sb.auth.onAuthStateChange((event)=>{
   if(event==="SIGNED_OUT" && S.view!=="boas"){ DB=novoDB(); CAT=DB.cats; UID=null; S.view="boas"; render(); }
 });
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{ navigator.serviceWorker.register("./service-worker.js").catch(()=>{}); });
+}
 boot();
 </script>
 </body>
