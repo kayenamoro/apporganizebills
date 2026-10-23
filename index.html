@@ -41,7 +41,7 @@
   }
   @media(min-width:640px){
     body{display:flex;align-items:center;justify-content:center;padding:24px}
-    #frame{height:840px;border:1px solid var(--line);border-radius:30px}
+    #frame{height:min(840px, calc(100dvh - 48px));border:1px solid var(--line);border-radius:30px}
   }
 
   header{
@@ -226,8 +226,8 @@ let DB = novoDB(), CAT = DB.cats;
 let UID = null; // id do usuário logado (auth.uid())
 
 /* busca tudo do usuário logado e monta o objeto DB no formato que as telas esperam */
-async function carregarDoServidor(uid){
-  const [perfil, cats, cartoes, entradas, fixas, caixinhas, gastos, produtos, hist, parcelas] = await Promise.all([
+async function buscarTudo(uid){
+  return Promise.all([
     sb.from("profiles").select("*").eq("id", uid).maybeSingle(),
     sb.from("categories").select("*").eq("user_id", uid).order("created_at"),
     sb.from("cards").select("*").eq("user_id", uid).order("created_at"),
@@ -239,6 +239,17 @@ async function carregarDoServidor(uid){
     sb.from("product_price_history").select("*").eq("user_id", uid).order("data"),
     sb.from("installments").select("*").eq("user_id", uid).order("created_at"),
   ]);
+}
+async function carregarDoServidor(uid){
+  let res = await buscarTudo(uid);
+  /* sessão vencida no meio do carregamento: renova o login e busca de novo,
+     em vez de mostrar a conta pela metade */
+  if(res.some(r=>r.error)){
+    try{ await sb.auth.refreshSession(); }catch(err){}
+    res = await buscarTudo(uid);
+    if(res.some(r=>r.error)) throw res.find(r=>r.error).error;
+  }
+  const [perfil, cats, cartoes, entradas, fixas, caixinhas, gastos, produtos, hist, parcelas] = res;
 
   const catsObj = {};
   (cats.data||[]).forEach(c=>{ catsObj[c.chave] = {id:c.id, nome:c.nome, cor:c.cor}; });
