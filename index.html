@@ -1757,8 +1757,27 @@ document.addEventListener("click", async e=>{
   }
 });
 
+/* ------------------------------ versão ------------------------------
+   O atalho na tela de início do iPhone costuma segurar a versão antiga.
+   Ao abrir (e ao voltar para o app), busca o index.html sem cache e,
+   se a versão publicada for outra, recarrega uma única vez.            */
+const VERSAO = "2026-10-23.3";
+async function conferirVersao(){
+  try{
+    const r = await fetch(location.pathname + "?v=" + Date.now(), { cache:"no-store" });
+    const html = await r.text();
+    const m = html.match(/const VERSAO = "([^"]+)"/);
+    if(m && m[1] !== VERSAO && sessionStorage.getItem("bp-recarregou") !== m[1]){
+      sessionStorage.setItem("bp-recarregou", m[1]);
+      location.replace(location.pathname + "?v=" + m[1]);
+    }
+  }catch(err){}
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") conferirVersao(); });
+
 /* ------------------------------ boot ------------------------------ */
 async function boot(){
+  conferirVersao();
   S.view = "boot"; render();
   const { data:{ session } } = await sb.auth.getSession();
   if(session){
