@@ -84,6 +84,11 @@
   .chiprow .chip{flex-shrink:0;font-size:11.5px;padding:6px 11px}
   .diahead{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--t4);margin:16px 0 6px}
   .gitem{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line2)}
+  .mcards{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px}
+  .mcards::-webkit-scrollbar{display:none}
+  .mcard{flex:0 0 auto;min-width:96px;background:none;border:1px solid var(--line);border-radius:11px;padding:9px 10px;color:#fff;font-family:inherit;cursor:pointer;text-align:center}
+  .mcard.on{border-color:#fff;background:#111}
+  .pill{display:inline-block;font-size:10.5px;color:var(--t2);border:1px solid var(--line);border-radius:99px;padding:1px 7px;margin-right:6px}
   .mini{font-size:9.5px;text-transform:uppercase;letter-spacing:.12em;color:#4a4a4a}
 
   .pad{padding-left:20px;padding-right:20px}
@@ -285,7 +290,7 @@ function num(x){
 const esc=t=>String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
 /* ------------------------------ estado ------------------------------ */
-const S = { view:"boot", tab:"inicio", nota:"inicio", revisando:false, menu:false,
+const S = { view:"boot", tab:"inicio", nota:"inicio", revisando:false, menu:false, fmes:0,
   fg:{mes:"", cats:[], cartoes:[]},
   itens:[], notaLida:null, faturaLida:null, faturaCartao:"", prod:0, form:null,
   tmp:{vals:{},erro:"",banco:"",cor:PALETA[6],gcat:"mercado",ccat:"mercado",volta:false},
@@ -727,13 +732,13 @@ function telaInicio(){
 
     ${cats.length?sec("Para onde foi o dinheiro", `ritmo: ${brl(ritmo)} no mês`, `<div class="pad"><div class="card" style="display:flex;gap:16px;align-items:center">
       ${rosca(cats,totVar)}<div style="flex:1;min-width:0">${legenda}</div></div>
-      <button class="link" data-tab="gastos">Ver todos os gastos com filtros →</button></div>`):""}
+      <button class="link" data-tab="gastos">Ver o histórico de compras →</button></div>`):""}
 
     ${DB.cartoes.length?sec("Cartões", limTotal?brl(livreTotal)+" livre":"", `<div class="pad"><div class="card">
       ${cartoesMini || `<p style="font-size:12px;color:var(--t4);line-height:1.6">Informe o limite de cada cartão para ver quanto ainda dá para usar.</p>`}
       ${DB.parcelas.length?`<div style="padding-top:12px;margin-top:4px;border-top:1px solid var(--line)">
-        <p style="font-size:11px;color:var(--t4);margin-bottom:10px">Parcelas já programadas</p>${miniBarras(parcelasPorMes(6))}</div>`:""}
-    </div><button class="link" data-tab="cartao">Cartões, limites e parcelas →</button></div>`):""}
+        <p style="font-size:11px;color:var(--t4);margin-bottom:10px">Faturas previstas (parcelas programadas)</p>${miniBarras(parcelasPorMes(6))}</div>`:""}
+    </div><button class="link" data-tab="cartao">Previsão de faturas e limites →</button></div>`):""}
 
     ${pj?sec("Próximos 6 meses","resultado por mês",`<div class="pad"><div class="card">${barras(pj)}</div>
       <p style="font-size:11px;color:#4a4a4a;line-height:1.6;margin-top:10px">Entradas e fixas se repetem, as parcelas seguem o calendário de cada compra e o variável usa a sua média mensal.</p></div>`):""}
@@ -802,17 +807,20 @@ function telaGastos(){
     if(dia!==ultimoDia){ linhas += `<p class="diahead">${dia}</p>`; ultimoDia = dia; }
     linhas += `<div class="gitem">${dot((CAT[g.cat]||CAT.outros).cor,7)}
       <span style="flex:1;min-width:0"><span style="font-size:13.5px;color:#e5e5e5;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(g.desc)}</span>
-      <span style="font-size:11px;color:#4a4a4a;display:block;margin-top:2px">${(CAT[g.cat]||CAT.outros).nome}${g.cartao?" · "+esc(g.cartao):" · sem cartão"}${g.obs?" · "+esc(g.obs):""}</span></span>
+      <span style="font-size:11px;color:#4a4a4a;display:block;margin-top:3px"><span class="pill">${g.cartao?esc(g.cartao):g.semNota?"dinheiro / PIX":"sem cartão"}</span>${(CAT[g.cat]||CAT.outros).nome}${g.obs?" · "+esc(g.obs):""}</span></span>
       <span class="num" style="font-size:13.5px;color:var(--t2)">${brl(g.valor)}</span>
       <button class="xis" data-del="gasto|${g._i}" aria-label="apagar">×</button></div>`;
   });
 
   const ativos = (f.mes?1:0) + f.cats.length + f.cartoes.length;
+  const porCartao = {}; lista.forEach(g=>{ const k=g.cartao||"Sem cartão"; porCartao[k]=(porCartao[k]||0)+g.valor; });
+  const resumoCartoes = Object.entries(porCartao).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+    <div><span style="font-size:13px;color:var(--t2);flex:1">${esc(k)}</span><span class="num" style="font-size:13px;color:var(--t3)">${brl(v)}</span></div>`).join("");
 
   return `<div class="fade">
     <div class="pad" style="padding-top:14px;padding-bottom:18px">
-      <h1>Gastos</h1>
-      <p class="sub">Filtre por mês, categoria e cartão. Dá para marcar mais de um.</p>
+      <h1>Compras</h1>
+      <p class="sub">O registro do que você comprou e em qual cartão. Filtre por mês, categoria e cartão.</p>
     </div>
     <div class="pad">
       <p class="flabel">Mês</p><div class="chiprow">${chipsMes}</div>
@@ -829,128 +837,148 @@ function telaGastos(){
         ${top.length>1?`<div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px">${top.slice(0,5).map(([k,v])=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--t3)">${dot((CAT[k]||CAT.outros).cor,6)}${(CAT[k]||CAT.outros).nome} <span class="num">${brl(v)}</span></span>`).join("")}</div>`:""}
       </div>
     </div>
-    <div class="pad">${linhas || `<div class="card"><p style="font-size:12px;color:var(--t4)">Nenhum gasto com esses filtros.</p></div>`}</div>
+    ${blocoRegistro()}
+    ${resumoCartoes?sec("Em qual cartão", lista.length+" compras", `<div class="pad"><div class="rows">${resumoCartoes}</div></div>`):""}
+    ${sec("Histórico","mais recentes primeiro",`<div class="pad">${linhas || `<div class="card"><p style="font-size:12px;color:var(--t4)">Nenhuma compra com esses filtros.</p></div>`}
+      <small class="hint" style="margin-top:14px">Compras parceladas ficam em Faturas e limites, para não contar duas vezes.</small></div>`)}
   </div>`;
 }
 
-/* ============================== CARTÕES ============================== */
+/* ============================== FATURAS E LIMITES ==============================
+   Só previsão. Mês 0 = fatura atual (compras à vista do mês no cartão + parcelas do mês).
+   Meses seguintes = parcelas já programadas. O limite livre de cada mês considera
+   que as faturas anteriores foram pagas e liberaram o limite.                     */
+function previsaoCartao(c, i){
+  const parcs = DB.parcelas.filter(p=>p.cartao===c.nome);
+  const avista = i===0 ? gastosCartaoMes(c.nome) : 0;
+  const parcMes = parcs.reduce((s,p)=>s+parcNoMes(p,i),0);
+  const preso = parcs.reduce((s,p)=>s + Math.max(0, p.total - (p.atual + i) + 1) * p.valor, 0);
+  const limite = c.limite || 0;
+  return { avista, parcMes, fatura: avista + parcMes, preso, livre: limite - avista - preso, limite };
+}
 function telaCartao(){
-  const rc = DB.cartoes.map((c,i)=>({c,i,r:resumoCartao(c)}));
-  const limTotal = rc.reduce((s,x)=>s+x.r.limite,0);
-  const livreTotal = rc.reduce((s,x)=>s+(x.r.limite?x.r.livre:0),0);
-  const usadoTotal = rc.reduce((s,x)=>s+(x.r.limite?x.r.usado:0),0);
+  const N = 6, mi = Math.min(S.fmes||0, N-1);
+  const mesNome = i => cap(MESES[(MES+i)%12]) + ((MES+i)>=12 ? " "+(ANO+1) : "");
+  const porMes = Array.from({length:N},(_,i)=>{
+    const lin = DB.cartoes.map(c=>({c, ...previsaoCartao(c,i)}));
+    return { i, fatura: lin.reduce((s,x)=>s+x.fatura,0), livre: lin.filter(x=>x.limite).reduce((s,x)=>s+x.livre,0), lin };
+  });
+  const limTotal = DB.cartoes.reduce((s,c)=>s+(c.limite||0),0);
+  const sel = porMes[mi];
 
-  const cards = rc.map(({c,i,r})=>{
-    const editando = S.form==="limite-"+i;
-    const cor = r.pct>85?"var(--up)":r.pct>60?"#FACC15":"#60A5FA";
-    return `<div class="card" style="margin-bottom:9px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:14px;flex:1">${esc(c.nome)}</span>
-        <button class="chip" data-form="limite-${i}">${r.limite?"editar limite":"+ limite"}</button>
-        <button class="xis" data-del="cartao|${i}" aria-label="remover ${esc(c.nome)}">×</button>
-      </div>
-      ${editando?`<div style="margin-top:12px">${campoValor("f-lim-"+i,"Limite total do cartão")}
-        ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
-        <button class="primary" data-act="save-limite" data-idx="${i}" style="margin-top:4px">Salvar limite</button></div>`:""}
-      ${r.limite?`
-        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:14px">
-          <span class="num" style="font-size:20px;font-weight:600;color:${r.livre<0?"var(--up)":"#fff"}">${brl(r.livre)}</span>
-          <span class="num" style="font-size:11px;color:var(--t4)">livre de ${brl(r.limite)}</span></div>
-        <span class="barline" style="display:block;height:6px;margin-top:10px"><span style="width:${r.pct}%;background:${cor}"></span></span>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px">
-          <div><p class="mini">Fatura do mês</p><p class="num" style="font-size:13px;color:var(--t2);margin-top:4px">${brl(r.fatura)}</p></div>
-          <div><p class="mini">Preso em parcelas</p><p class="num" style="font-size:13px;color:var(--t2);margin-top:4px">${brl(r.preso)}</p></div>
-        </div>`
-      : `<p style="font-size:12px;color:var(--t4);margin-top:10px">Informe o limite para ver quanto ainda dá para usar.</p>`}
+  const chipsMes = porMes.map(m=>`<button class="mcard ${m.i===mi?"on":""}" data-fmes="${m.i}">
+      <span style="font-size:11px;color:${m.i===mi?"#fff":"var(--t4)"}">${m.i===0?"Atual":cap(MABR[(MES+m.i)%12])}</span>
+      <span class="num" style="font-size:13px;font-weight:600;margin-top:5px;display:block">${brl(m.fatura).replace(",00","")}</span>
+    </button>`).join("");
+
+  const linhasCartao = sel.lin.map(({c,fatura,avista,parcMes,livre,limite})=>{
+    const pct = limite ? Math.min(100, (limite-livre)/limite*100) : 0;
+    const cor = pct>85?"var(--up)":pct>60?"#FACC15":"#60A5FA";
+    return `<div class="card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-size:14px">${esc(c.nome)}</span>
+        <span class="num" style="font-size:15px;font-weight:600">${brl(fatura)}</span></div>
+      <p class="num" style="font-size:11px;color:var(--t4);margin-top:4px;text-align:right">${mi===0&&avista?`${brl(avista)} à vista + `:""}${brl(parcMes)} em parcelas</p>
+      ${limite?`<span class="barline" style="display:block;height:5px;margin-top:12px"><span style="width:${pct}%;background:${cor}"></span></span>
+        <p class="num" style="font-size:11.5px;margin-top:8px;color:${livre<0?"var(--up)":"var(--t3)"}">${brl(livre)} de limite livre <span style="color:var(--t4)">de ${brl(limite)}</span></p>`
+      :`<p style="font-size:11.5px;color:var(--t4);margin-top:10px">Sem limite cadastrado</p>`}
     </div>`;
   }).join("");
 
+  /* gestão: limites e parcelamentos */
+  const listaCartoes = DB.cartoes.map((c,i)=>{
+    const ed = S.form==="limite-"+i;
+    return `<div style="flex-wrap:wrap"><span style="font-size:13.5px;color:var(--t2);flex:1">${esc(c.nome)}</span>
+      <span class="num" style="font-size:12.5px;color:var(--t3)">${c.limite?brl(c.limite):"sem limite"}</span>
+      <button class="chip" data-form="limite-${i}">${c.limite?"editar":"+ limite"}</button>
+      <button class="xis" data-del="cartao|${i}" aria-label="remover ${esc(c.nome)}">×</button>
+      ${ed?`<div style="width:100%;margin-top:10px">${campoValor("f-lim-"+i,"Limite total do cartão")}
+        ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
+        <button class="primary" data-act="save-limite" data-idx="${i}" style="margin-top:2px">Salvar limite</button></div>`:""}
+    </div>`;
+  }).join("");
   const formCartao = S.form==="cartao" ? `<div class="card" style="margin-top:9px">
     ${campo("f-cc-nome","Nome do cartão","ex.: Nubank crédito")}
     ${campoValor("f-cc-lim","Limite (opcional)")}
     ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
-    <button class="primary" data-act="save-cartao" style="margin-top:6px">Salvar cartão</button>
-  </div>` : "";
+    <button class="primary" data-act="save-cartao" style="margin-top:6px">Salvar cartão</button></div>` : "";
 
-  /* parcelas */
-  const pm = parcelasPorMes(6);
-  const listaParc = DB.parcelas.map((p,i)=>({p,i})).sort((a,b)=>parcSaldo(b.p)-parcSaldo(a.p)).map(({p,i})=>{
+  const listaParc = DB.parcelas.map((p,i)=>({p,i})).filter(({p})=>parcRestantes(p)>0)
+    .sort((a,b)=>parcSaldo(b.p)-parcSaldo(a.p)).map(({p,i})=>{
     const fim = new Date(ANO, MES + (p.total - p.atual), 1);
     return `<div><span style="flex:1;min-width:0">
       <span style="font-size:13.5px;color:var(--t2);display:block">${esc(p.desc)}</span>
-      <span class="num" style="font-size:11px;color:#4a4a4a;display:block;margin-top:3px">${esc(p.cartao||"sem cartão")} · ${p.atual}/${p.total} · ${brl(p.valor)} · termina em ${MABR[fim.getMonth()]}/${String(fim.getFullYear()).slice(2)}</span></span>
-      <span style="text-align:right"><span class="num" style="font-size:13px;color:var(--t2);display:block">${brl(parcSaldo(p))}</span>
-      <span style="font-size:10.5px;color:#4a4a4a">${parcRestantes(p)} restantes</span></span>
+      <span class="num" style="font-size:11px;color:#4a4a4a;display:block;margin-top:3px">${esc(p.cartao)} · ${p.atual}/${p.total} de ${brl(p.valor)} · até ${MABR[fim.getMonth()]}/${String(fim.getFullYear()).slice(2)}</span></span>
+      <span class="num" style="font-size:13px;color:var(--t3)">${brl(parcSaldo(p))}</span>
       <button class="xis" data-del="parcela|${i}" aria-label="apagar parcelamento">×</button></div>`;
   }).join("");
-
   const opsCartao = DB.cartoes.map(c=>`<option value="${esc(c.nome)}" ${S.tmp.vals["f-pa-cartao"]===c.nome?"selected":""}>${esc(c.nome)}</option>`).join("");
   const formParc = S.form==="parcela" ? `<div class="card" style="margin-top:9px">
     ${campo("f-pa-desc","O que foi comprado","ex.: Notebook · Geladeira")}
     ${campoValor("f-pa-valor","Valor de cada parcela")}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       ${campo("f-pa-atual","Parcela deste mês","1","text","numeric")}
-      ${campo("f-pa-total","Total de parcelas","10","text","numeric")}
-    </div>
+      ${campo("f-pa-total","Total de parcelas","10","text","numeric")}</div>
     <div class="field"><label for="f-pa-cartao">Cartão</label><select id="f-pa-cartao"><option value="">escolha</option>${opsCartao}</select></div>
     ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
-    <button class="primary" data-act="save-parcela" style="margin-top:6px">Salvar parcelamento</button>
-  </div>` : "";
-
-  const semNota = DB.gastos.map((g,i)=>({...g,_i:i})).filter(g=>g.semNota).reverse().slice(0,8).map(g=>`
-    <div>${dot((CAT[g.cat]||CAT.outros).cor,6)}
-      <span style="flex:1;min-width:0"><span style="font-size:13.5px;color:var(--t2);display:block">${esc(g.desc)}</span>
-      <span style="font-size:11px;color:#4a4a4a;display:block;margin-top:2px">${new Date(g.data).toLocaleDateString("pt-BR")}${g.obs?" · "+esc(g.obs):""}</span></span>
-      <span class="num" style="font-size:13px;color:var(--t3)">${brl(g.valor)}</span></div>`).join("");
+    <button class="primary" data-act="save-parcela" style="margin-top:6px">Salvar parcelamento</button></div>` : "";
 
   return `<div class="fade">
     <div class="pad" style="padding-top:14px;padding-bottom:20px">
-      <h1>Cartões</h1>
-      <p class="sub">Limite livre, fatura do mês e as parcelas que já estão programadas.</p>
+      <h1>Faturas e limites</h1>
+      <p class="sub">Quanto cada cartão vai cobrar e quanto de limite sobra, mês a mês.</p>
     </div>
 
-    ${limTotal?`<div class="pad" style="margin-bottom:26px"><div class="card hero">
-      <p style="font-size:12px;color:var(--t3)">Limite livre estimado, somando os cartões</p>
-      <p class="num big" style="margin-top:8px">${brl(livreTotal)}</p>
-      <p class="num" style="font-size:11.5px;color:var(--t4);margin-top:8px">${brl(usadoTotal)} em uso de ${brl(limTotal)}</p>
-      <span class="barline" style="display:block;height:6px;margin-top:14px"><span style="width:${Math.min(100,usadoTotal/limTotal*100)}%;background:#60A5FA"></span></span>
-    </div></div>`:""}
+    ${DB.cartoes.length?`
+    <div class="pad"><div class="card hero">
+      <p style="font-size:12px;color:var(--t3)">${mi===0?"Fatura deste mês":"Fatura prevista para "+mesNome(mi)}, somando os cartões</p>
+      <p class="num big" style="margin-top:8px">${brl(sel.fatura)}</p>
+      ${limTotal?`<p class="num" style="font-size:11.5px;color:var(--t4);margin-top:8px">${brl(sel.livre)} de limite livre de ${brl(limTotal)}</p>
+      <span class="barline" style="display:block;height:6px;margin-top:14px"><span style="width:${Math.min(100,(limTotal-sel.livre)/limTotal*100)}%;background:#60A5FA"></span></span>`:""}
+    </div></div>
+    <div class="pad" style="margin:12px 0 26px"><div class="mcards">${chipsMes}</div></div>
+    ${sec("Por cartão", mesNome(mi), `<div class="pad">${linhasCartao}
+      <small class="hint" style="margin-top:10px">${mi===0?"Fatura atual: compras à vista deste mês no cartão mais as parcelas que caem agora.":"Meses futuros mostram só o que já está programado em parcelas. Compras novas entram conforme você registrar."} O limite livre considera que as faturas anteriores foram pagas.</small></div>`)}
+    `:""}
 
-    ${sec("Seus cartões","",`<div class="pad">
-      ${cards || `<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Cadastre seus cartões para marcar em qual deles cada compra foi feita.</p></div>`}
-      <button class="chip" data-form="cartao" style="margin-top:4px;${S.form==="cartao"?"border-color:#fff;color:#fff":""}">+ Novo cartão</button>
-      ${formCartao}
-    </div>`)}
-
-    ${sec("Parcelas nos próximos meses", brl(pm.reduce((s,m)=>s+m.valor,0)), `<div class="pad">
-      ${DB.parcelas.length?`<div class="card">${miniBarras(pm)}</div>`:""}
-      ${listaParc?`<div class="rows" style="margin-top:9px">${listaParc}</div>`:`<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Cadastre compras parceladas para o app descontar do limite e somar nos próximos meses.</p></div>`}
+    ${sec("Parcelamentos programados", brl(DB.parcelas.reduce((s,p)=>s+parcSaldo(p),0)), `<div class="pad">
+      ${listaParc?`<div class="rows">${listaParc}</div>`:`<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Cadastre aqui as compras parceladas. Elas entram na previsão das faturas e no limite, sem aparecer de novo em Compras.</p></div>`}
       <button class="chip" data-form="parcela" style="margin-top:10px;${S.form==="parcela"?"border-color:#fff;color:#fff":""}">+ Compra parcelada</button>
-      ${formParc}
-      <small class="hint" style="margin-top:14px">Estimativa: limite menos a fatura deste mês e tudo que ainda falta pagar das parcelas. Compras parceladas também lançadas como gasto podem aparecer duas vezes na fatura do mês.</small>
-    </div>`)}
+      ${formParc}</div>`)}
 
-    ${sec("Compra sem nota","registre com observação",`<div class="pad"><div class="card">
-      <p style="font-size:12px;color:var(--t4);margin-bottom:14px;line-height:1.5">Pagamento por aproximação, PIX, transferência: a fatura vai mostrar só um código. Anote aqui o que foi de verdade.</p>
+    ${sec("Cartões e limites", limTotal?brl(limTotal):"", `<div class="pad">
+      ${listaCartoes?`<div class="rows">${listaCartoes}</div>`:`<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Cadastre seus cartões e o limite de cada um.</p></div>`}
+      <button class="chip" data-form="cartao" style="margin-top:10px;${S.form==="cartao"?"border-color:#fff;color:#fff":""}">+ Novo cartão</button>
+      ${formCartao}</div>`)}
+  </div>`;
+}
+
+/* registrar compra sem nota e importar fatura (ficam na página Compras) */
+function blocoRegistro(){
+  const aberto = S.form==="semnota";
+  return `${sec("Registrar","",`<div class="pad">
+    <div style="display:flex;flex-wrap:wrap;gap:5px">
+      <button class="chip" data-act="manual">+ Compra</button>
+      <button class="chip" data-form="semnota" style="${aberto?"border-color:#fff;color:#fff":""}">+ Compra sem nota</button>
+      <button class="chip" data-form="importar" style="${S.form==="importar"?"border-color:#fff;color:#fff":""}">Importar fatura PDF</button>
+    </div>
+    ${aberto?`<div class="card" style="margin-top:9px">
+      <p style="font-size:12px;color:var(--t4);margin-bottom:14px;line-height:1.5">Aproximação, PIX, transferência: a fatura só mostra um código. Anote o que foi de verdade.</p>
       ${campo("f-c-desc","Onde / o quê","ex.: EC*PAGSEG 4471 · PIX pro João")}
       ${campoValor("f-c-valor","Valor")}
       ${selectCartao("f-c-cartao")}
       ${chipsCat("ccat")}
       ${areaObs("f-c-obs","Observação: o que foi comprado","ex.: sapato social pro casamento")}
-      ${S.tmp.erro&&!S.form?`<p class="err">${S.tmp.erro}</p>`:""}
-      <button class="primary" data-act="save-semnota" style="margin-top:6px">Salvar registro →</button>
-    </div>${semNota?`<div class="rows" style="margin-top:9px">${semNota}</div>`:""}</div>`)}
-
-    ${sec("Importar fatura","PDF do cartão",`<div class="pad">
-      ${DB.cartoes.length
-        ? DB.cartoes.map(c=>`<button class="tile" data-act="pick-fatura" data-cartao-nome="${esc(c.nome)}" style="margin-bottom:7px">
-            <span style="flex:1;font-size:13.5px;color:var(--t2)">Importar fatura · ${esc(c.nome)}</span>
-            <svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>`).join("")
-        : `<div class="card"><p style="font-size:12px;color:var(--t4);line-height:1.6">Cadastre um cartão acima para poder importar a fatura dele em PDF.</p></div>`}
-      <input type="file" id="fatura-input" accept="application/pdf" style="display:none">
-      <small class="hint">Lemos o texto do PDF direto no seu aparelho e separamos as compras por data e valor. Cada banco formata diferente, confira antes de salvar.</small>
-    </div>`)}
-  </div>`;
+      ${S.tmp.erro?`<p class="err">${S.tmp.erro}</p>`:""}
+      <button class="primary" data-act="save-semnota" style="margin-top:6px">Salvar registro →</button></div>`:""}
+    ${S.form==="importar"?`<div style="margin-top:9px">
+      ${DB.cartoes.length ? DB.cartoes.map(c=>`<button class="tile" data-act="pick-fatura" data-cartao-nome="${esc(c.nome)}" style="margin-bottom:7px">
+          <span style="flex:1;font-size:13.5px;color:var(--t2)">Importar fatura · ${esc(c.nome)}</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>`).join("")
+        : `<div class="card"><p style="font-size:12px;color:var(--t4)">Cadastre um cartão em Faturas e limites primeiro.</p></div>`}
+      <small class="hint" style="margin-top:8px">Lemos o PDF no seu aparelho e separamos as compras por data e valor. Confira antes de salvar.</small></div>`:""}
+    <input type="file" id="fatura-input" accept="application/pdf" style="display:none">
+  </div>`)}`;
 }
 
 /* ============================== MENU LATERAL ============================== */
@@ -1190,8 +1218,8 @@ function telaPrecos(){
 
 const PAGINAS = [
   {id:"inicio", label:"Painel",          d:"M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"},
-  {id:"gastos", label:"Gastos",          d:"M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"},
-  {id:"cartao", label:"Cartões e limites",d:"M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20"},
+  {id:"gastos", label:"Compras",          d:"M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"},
+  {id:"cartao", label:"Faturas e limites",d:"M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 10h20"},
   {id:"plano",  label:"Planejamento",    d:"M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"},
   {id:"nota",   label:"Adicionar compra",d:"M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"},
   {id:"precos", label:"Preços",          d:"M3 3v18h18M7 15l4-5 3 3 5-7"}
@@ -1406,7 +1434,7 @@ function erroAmigavel(e){
 }
 
 document.addEventListener("click", async e=>{
-  const b = e.target.closest("[data-tab],[data-go],[data-scan],[data-prod],[data-cat],[data-act],[data-form],[data-banco],[data-selcat],[data-cor],[data-del],[data-recat],[data-fg],[data-gocat]");
+  const b = e.target.closest("[data-tab],[data-go],[data-scan],[data-prod],[data-cat],[data-act],[data-form],[data-banco],[data-selcat],[data-cor],[data-del],[data-recat],[data-fg],[data-gocat],[data-fmes]");
   if(!b) return;
   snap();
 
@@ -1414,6 +1442,7 @@ document.addEventListener("click", async e=>{
   if(b.dataset.act==="menu-abrir"){ S.menu=true; S.manterScroll=true; return render(); }
   if(b.dataset.act==="menu-fechar"){ S.menu=false; S.manterScroll=true; return render(); }
   if(b.dataset.gocat){ S.fg={mes:mesKey(new Date()), cats:[b.dataset.gocat], cartoes:[]}; S.tab="gastos"; S.revisando=false; S.menu=false; S.form=null; return render(); }
+  if(b.dataset.fmes!==undefined){ S.fmes=+b.dataset.fmes; S.manterScroll=true; return render(); }
   if(b.dataset.fg!==undefined){
     const [campo,val] = b.dataset.fg.split("|");
     if(campo==="limpar") S.fg={mes:"",cats:[],cartoes:[]};
@@ -1694,7 +1723,7 @@ document.addEventListener("click", async e=>{
       const row = await inserir("expenses", { descricao:d, valor:v, cat, obs, cartao, data:new Date().toISOString(), sem_nota:pfx==="c" });
       DB.gastos.push({ id:row.id, desc:row.descricao, valor:+row.valor, cat:row.cat, obs:row.obs||"", cartao:row.cartao||"", data:row.data, semNota:row.sem_nota });
       limpar(`f-${pfx}-desc`,`f-${pfx}-valor`,`f-${pfx}-obs`);
-      if(pfx==="g"){ S.nota="inicio"; S.tab="inicio"; }
+      if(pfx==="g"){ S.nota="inicio"; S.tab="inicio"; } else { S.form=null; S.manterScroll=true; }
     }catch(err){ S.tmp.erro="Não deu para salvar o gasto agora."; }
     return render();
   }
@@ -1711,7 +1740,7 @@ document.addEventListener("click", async e=>{
         DB.gastos.push({ id:row.id, desc:row.descricao, valor:+row.valor, cat:row.cat, obs:row.obs||"", cartao:row.cartao||"", data:row.data, semNota:false });
       }
       S.itens=[]; S.notaLida=null;
-      S.tab = ehFatura ? "cartao" : "inicio"; S.faturaCartao=""; S.nota="inicio";
+      S.tab = ehFatura ? "gastos" : "inicio"; S.faturaCartao=""; S.nota="inicio";
     }catch(err){ S.tmp.erro="Salvei parte dos itens, mas algo falhou no meio do caminho. Confira seus lançamentos antes de repetir."; }
     return render();
   }
