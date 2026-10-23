@@ -39,10 +39,6 @@
     max-width:430px;margin:0 auto;background:var(--bg);
     height:100dvh;display:flex;flex-direction:column;overflow:hidden;
   }
-  @media(min-width:640px){
-    body{display:flex;align-items:center;justify-content:center;padding:24px}
-    #frame{height:min(840px, calc(100dvh - 48px));border:1px solid var(--line);border-radius:30px}
-  }
 
   header{
     display:flex;align-items:center;justify-content:space-between;
@@ -175,6 +171,55 @@
   .xis:active{color:var(--up)}
   .cordot{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex-shrink:0}
   .cordot.on{border-color:#fff}
+
+  /* ===================== layout adaptável ===================== */
+  .topin{display:flex;align-items:center;gap:10px;width:100%}
+  .so-desk{display:none}
+  .dash-top,.dash-grid{display:block}
+
+  /* tablet: tela cheia, conteúdo centralizado */
+  @media(min-width:640px){
+    #frame{max-width:none}
+    #app>*{max-width:640px;margin-left:auto;margin-right:auto}
+    .topin{max-width:640px;margin:0 auto}
+  }
+
+  /* desktop: menu lateral fixo e painel em grade */
+  @media(min-width:1024px){
+    #frame{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr}
+    #frame.logado{grid-template-columns:264px 1fr}
+    #frame.logado #menu{position:relative;transform:none;transition:none;grid-column:1;grid-row:1 / 3;
+      width:auto;max-width:none;z-index:auto;padding-bottom:20px}
+    #frame.logado #topo{grid-column:2;grid-row:1}
+    #frame.logado #app{grid-column:2;grid-row:2;min-height:0}
+    #veu{display:none}
+    .so-mobile{display:none !important}
+    .so-desk{display:inline}
+
+    .topbar{padding:26px 32px 14px}
+    .chiprow{flex-wrap:wrap;overflow:visible}
+    .topin{max-width:760px;padding:0 20px}
+    .iconbtn.lancar{width:auto;padding:0 16px;gap:8px;font-size:13.5px;font-family:inherit;font-weight:500}
+
+    #app{padding:0 32px 32px}
+    #app>*{max-width:760px}
+    #frame.largo .topin,#frame.largo #app>*{max-width:1180px}
+
+    .mitem:hover,.mcat:hover{background:#101010;color:#fff}
+    .kpi:hover,button.tile:hover,.mcard:hover{border-color:#3d3d3d}
+    .chip:hover{border-color:#3d3d3d;color:var(--t2)}
+
+    /* painel */
+    .hello{padding-top:2px !important}
+    .dash-top{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;padding:6px 20px 26px}
+    .dash-top>.pad{padding:0 !important}
+    .dash-top .hero{height:100%;display:flex;flex-direction:column;justify-content:center;padding:26px}
+    .dash-top .big{font-size:56px}
+    .dash-top .kpis{gap:12px;height:100%}
+    .dash-top .kpi{padding:16px 18px;display:flex;flex-direction:column;justify-content:center}
+    .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 4px;align-items:start}
+    .dash-grid .sec.full{grid-column:1 / -1}
+  }
 </style>
 </head>
 <body>
@@ -719,8 +764,9 @@ function telaInicio(){
   const outrosGastos = DB.gastos.filter(g=>g.cat==="outros");
 
   return `<div class="fade">
-    <div class="pad" style="padding-top:14px;padding-bottom:22px">
-      <p class="eyebrow" style="margin-bottom:9px">Olá, ${esc((DB.user.nome||"").split(" ")[0])} · ${MESES[MES]}</p>
+    <p class="eyebrow pad hello" style="padding-top:14px;margin-bottom:9px">Olá, ${esc((DB.user.nome||"").split(" ")[0])} · ${MESES[MES]}</p>
+    <div class="dash-top">
+    <div class="pad" style="padding-bottom:22px">
       <div class="card hero">
         <p style="font-size:12px;color:var(--t3)">Como o mês fecha</p>
         <p class="num big" style="margin-top:8px;color:${azul?"#fff":"var(--up)"}">${azul?"+":"−"}${brl(Math.abs(fecha))}</p>
@@ -735,12 +781,14 @@ function telaInicio(){
       ${kpi("Ainda sai", brl(aindaSai), "fixas, caixinhas e parcelas", "plano")}
       ${kpi("Limite livre", limTotal?brl(livreTotal):"—", limTotal?`de ${brl(limTotal)}`:"cadastre os limites", "cartao")}
     </div>
+    </div>
 
     ${outrosGastos.length?`<div class="pad" style="margin:4px 0 26px"><button class="tile" data-act="revisar-outros">
       ${dot("#FACC15",7)}<span style="flex:1"><span style="font-size:13.5px;display:block">${outrosGastos.length} ${outrosGastos.length===1?"gasto":"gastos"} em "Outros"</span>
       <span style="font-size:11.5px;color:var(--t4);display:block;margin-top:3px">Toque para organizar por categoria</span></span>
       <svg class="chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button></div>`:`<div style="height:22px"></div>`}
 
+    <div class="dash-grid">
     ${cats.length?sec("Para onde foi o dinheiro", `ritmo: ${brl(ritmo)} no mês`, `<div class="pad"><div class="card" style="display:flex;gap:16px;align-items:center">
       ${rosca(cats,totVar)}<div style="flex:1;min-width:0">${legenda}</div></div>
       <button class="link" data-tab="gastos">Ver o histórico de compras →</button></div>`):""}
@@ -756,6 +804,7 @@ function telaInicio(){
 
     ${lanc?sec("Últimos lançamentos", gm.length+" no mês", `<div class="pad"><div class="rows">${lanc}</div>
       <button class="link" data-tab="gastos">Ver todos →</button></div>`):""}
+    </div>
   </div>`;
 }
 
@@ -1002,7 +1051,7 @@ function menuLateral(){
     <span class="num" style="font-size:11.5px;color:var(--t4)">${porCat[k]?brl(porCat[k]):""}</span></button>`).join("");
   return `<div class="mhead">
       <span class="brand" style="color:#fff">BillsPlan</span>
-      <button class="iconbtn" data-act="menu-fechar" aria-label="fechar menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button class="iconbtn so-mobile" data-act="menu-fechar" aria-label="fechar menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <p style="font-size:13px;color:var(--t3);padding:0 20px 16px">${esc(DB.user?.nome||"")}</p>
     <div class="mgroup">${PAGINAS.map(p=>item(p.id,p.label,p.d)).join("")}</div>
@@ -1249,12 +1298,15 @@ function render(){
   } else {
     app.innerHTML = S.revisando ? telaRevisarOutros() : TELAS[S.tab]();
     const titulo = S.revisando ? "Revisar categorias" : (PAGINAS.find(p=>p.id===S.tab)||{}).label || "";
-    topo.innerHTML = `<button class="iconbtn" data-act="menu-abrir" aria-label="abrir menu" aria-expanded="${S.menu}">
+    topo.innerHTML = `<div class="topin"><button class="iconbtn so-mobile" data-act="menu-abrir" aria-label="abrir menu" aria-expanded="${S.menu}">
         <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
       <span class="ttl">${esc(titulo)}</span>
-      <button class="iconbtn solid" data-act="manual" aria-label="lançar gasto"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
+      <button class="iconbtn solid lancar" data-act="manual" aria-label="lançar gasto"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="so-desk">Lançar gasto</span></button></div>`;
     menu.innerHTML = menuLateral();
   }
+  const frame = document.getElementById("frame");
+  frame.classList.toggle("logado", S.view==="app");
+  frame.classList.toggle("largo", S.view==="app" && !S.revisando && S.tab==="inicio");
   menu.classList.toggle("on", S.menu); veu.classList.toggle("on", S.menu);
   if(!S.manterScroll) app.scrollTop = 0;
   S.manterScroll = false;
