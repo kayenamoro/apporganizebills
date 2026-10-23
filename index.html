@@ -1813,7 +1813,7 @@ document.addEventListener("click", async e=>{
    O atalho na tela de início do iPhone costuma segurar a versão antiga.
    Ao abrir (e ao voltar para o app), busca o index.html sem cache e,
    se a versão publicada for outra, recarrega uma única vez.            */
-const VERSAO = "2026-10-23.3";
+const VERSAO = "2026-10-23.4";
 async function conferirVersao(){
   try{
     const r = await fetch(location.pathname + "?v=" + Date.now(), { cache:"no-store" });
